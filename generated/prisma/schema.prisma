@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+  // binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Типы транзакций
+enum TransactionType {
+  PAYMENT
+  EXPENSE
+}
+
+// Статусы транзакций
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+// Статусы ключей
+enum KeyStatus {
+  INACTIVE // Ни разу не использован
+  ACTIVE // Используется
+  USED // Использован
+  REVOKED // Анулирован
+  EXPIRED // Просрочен
+}
+
+// Роли пользователей
+enum UserRole {
+  ADMIN // Админ
+  GUEST // Гость, не имеет ни какой подписки
+  USER // Пользователь, БЕЗ АКТИВНЫХ ПОДПИСОК
+  FREE // Пользуется только бесплатной подпиской
+  SUBSCRIBER // Подписка активна
+  INACTIVE // Не было активности в течении времени
+}
+
+// Сервер
+model Server {
+  id       Int     @id @default(autoincrement())
+  name     String // Название
+  isOnline Boolean @default(false) // В сети или нет
+  ip       String? // IP сервера
+  port     Int?
+  password String?
+  country  String? // Страна
+
+  vpnKey VpnKey[] // ВПН КЛЮЧИ
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id            String   @id //id пользователя telegram
+  balance       Int      @default(0) // для рефералки
+  username      String?
+  role          UserRole @default(GUEST) // Роль
+  agreedToTerms Boolean  @default(false) // Согласен с условиями
+
+  subscription     Subscription[]
+  transactions     Transaction[]
+  redemptionsPromo RedemptionPromo[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bannedAt DateTime? // Если забанен
+}
+
+model Subscription {
+  id       Int     @id @default(autoincrement())
+  userId   String
+  planId   Int
+  isActive Boolean @default(true) // Если активна
+
+  plan Plan @relation(fields: [planId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  vpnKey      VpnKey[]
+  transaction Transaction[]
+
+  expiresAt DateTime // Срок подписки
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt // Может убрать ???
+
+  @@index([userId, planId])
+}
+
+// Ключ для доступа
+model VpnKey {
+  id             Int       @id @default(autoincrement())
+  subscriptionId Int
+  serverId       Int
+  key            String    @unique
+  status         KeyStatus @default(ACTIVE)
+
+  serverName   String? // Название сервера (Нидерланды 1)
+  trafficLimit Int? // Ограничение трафика
+  usedTraffic  Int? // Использовано трафика
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  server       Server       @relation(fields: [serverId], references: [id])
+
+  expiresAt DateTime? // Когда истекает
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@index([subscriptionId, serverId])
+}
+
+model Plan {
+  id           Int    @id @default(autoincrement())
+  name         String @unique // Название тарифа
+  price        Int // Цена тарифа
+  durationDays Int    @default(9999) // количество дней, на которое выдается подписка
+
+  discountPrice      Int? // Цена со скидкой
+  discountValue      Int? // Сумма скидка
+  discountPercentage Int? // Скидка в процнтах
+
+  image       String? // Картинка
+  description String? // Описание тарифа
+  isActive    Boolean @default(false) // Если активен доступен пользователям
+
+  subscription Subscription[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+}
+
+model Transaction {
+  id            Int               @id @default(autoincrement()) //ID транзакции
+  userId        String
+  amount        Int
+  description   String?
+  subcriptionId Int
+  status        TransactionStatus @default(PENDING)
+  type          TransactionType
+
+  user         User         @relation(fields: [userId], references: [id])
+  subscription Subscription @relation(fields: [subcriptionId], references: [id])
+  createdAt    DateTime     @default(now())
+
+  @@index([userId])
+}
+
+model PromoCode {
+  id        Int       @id @default(autoincrement()) // Уникальный ID промокода
+  code      String    @unique // Уникальный текстовый код (например, "FREETRIAL1000")
+  value     Int // Сколько рублей начисляется за использование промокода
+  maxUses   Int? // Максимальное количество использований (null = бесконечное)
+  usedCount Int       @default(0) // Сколько раз уже использовали промокод
+  expiresAt DateTime? // Дата и время окончания действия промокода (null = бессрочный)
+  isActive  Boolean   @default(true) // Флаг активности промокода (false = отключён)
+
+  redemptionsPromo RedemptionPromo[] // Все случаи, когда промокод был активирован пользователями
+  createdAt        DateTime          @default(now()) // Дата создания записи
+  updatedAt        DateTime          @updatedAt // Дата последнего обновления записи
+}
+
+model RedemptionPromo {
+  id          Int      @id @default(autoincrement()) // Уникальный ID записи об активации промокода
+  userId      String // ID пользователя, который активировал промокод
+  promoCodeId Int // ID промокода, который был активирован
+  usedAt      DateTime @default(now()) // Время, когда промокод был активирован
+
+  user      User      @relation(fields: [userId], references: [id]) // Связь с пользователем
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id]) // Связь с промокодом
+
+  @@unique([userId, promoCodeId]) // Ограничение: один пользователь может активировать один и тот же промокод только один раз
+}

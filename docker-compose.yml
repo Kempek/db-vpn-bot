@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15
+    container_name: vpn-db
+    restart: always
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: vpn_user
+      POSTGRES_PASSWORD: E!v9Oy}VDL3.ip_q
+      POSTGRES_DB: vpn_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: vpn-api
+    depends_on:
+      - db
+    ports:
+      - '3000:3000'
+      - '5555:5555' # Prisma Studio
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    command: >
+      sh -c "./wait-for-it.sh db 5432 &&
+             npx prisma migrate dev --name init &&
+             npx prisma generate &&
+             npm run dev"
+
+volumes:
+  postgres_data:

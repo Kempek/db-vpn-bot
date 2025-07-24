@@ -1,0 +1,16 @@
+FROM node:20
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+# Установка netcat
+RUN apt-get update && apt-get install -y netcat-openbsd
+
+COPY . .
+
+RUN npm install -g prisma tsx && npx prisma generate
+RUN chmod +x ./wait-for-it.sh
+
+EXPOSE 3000
